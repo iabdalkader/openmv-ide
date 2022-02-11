@@ -1,0 +1,127 @@
+name: 'OpenMV IDE Build 🔥'
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+    branches:    
+      - 'master'
+    paths:
+      - 'qt-creator/**'
+      - 'openmv-media/**'
+      - '.github/workflows/*.yml'
+
+  pull_request:
+    branches:    
+      - 'master'
+    paths:
+      - 'qt-creator/**'
+      - 'openmv-media/**'
+      - '.github/workflows/*.yml'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        #os: [ubuntu-18.04, windows-latest, macos-latest]
+        os: [ubuntu-18.04, windows-latest]
+      fail-fast: false
+    steps:
+    - name: '⏳ Checkout repository'
+      uses: actions/checkout@v2
+      with:
+        submodules: false
+
+    - name: '🧱 Update submodules'
+      run: git submodule update --init --depth=1 --no-single-branch
+
+    - name: '🛠 Install Qt'
+      uses: jurplel/install-qt-action@v2.14.0
+      with:
+        version: '5.15.2'
+        target: 'desktop'
+        install-deps: 'true'
+        modules: 'qtserialport qtdeclarative'
+        tools: 'tools_ifw,4.2.0,qt.tools.ifw.42 tools_qtcreator,6.0.2-0,qt.tools.qtcreator'
+
+    - name: '🏗 Build the IDE'
+      run: python --version && python make.py
+
+    - name: '⬆ Upload artifacts'
+      if: github.event_name != 'pull_request'
+      uses: actions/upload-artifact@v2
+      with:
+        name: openmvide
+        path: build/openmv-ide-*.*
+        if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-20.04
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+    - name: '⏳ Checkout repository'
+      uses: actions/checkout@v2
+      with:
+        submodules: false
+
+    - name: '🤌 Download artifacts'
+      uses: actions/download-artifact@v2
+      with:
+        name: openmvide
+        path: openmvide
+
+    - name: '🔥 Create production release'
+      uses: softprops/action-gh-release@v1
+      with:
+        draft: true
+        files: openmvide/openmv-ide-*.*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: '🧹 Remove artifacts'
+      uses: geekyeggo/delete-artifact@v1
+      with:
+        name: openmvide
+        failOnError: false
+
+  development:
+    needs: build
+    runs-on: ubuntu-20.04
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') == false
+    steps:
+    - name: '⏳ Checkout repository'
+      uses: actions/checkout@v2
+      with:
+        submodules: false
+
+    - name: '🤌 Download artifacts'
+      uses: actions/download-artifact@v2
+      with:
+        name: openmvide
+        path: openmvide
+
+    - name: '🏷 Update development tag'
+      uses: EndBug/latest-tag@latest
+      with:
+        tag-name: development
+        description: Development Release.
+
+    - name: '🔥 Create development release'
+      uses: softprops/action-gh-release@v1
+      with:
+        draft: false
+        name: Development Release
+        tag_name: development
+        body: '> **⚠️ WARNING: This a development release and it may be unstable⚠️**'
+        files: openmvide/openmv-ide-*.*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: '🧹 Remove artifacts'
+      uses: geekyeggo/delete-artifact@v1
+      with:
+        name: openmvide
+        failOnError: false
+

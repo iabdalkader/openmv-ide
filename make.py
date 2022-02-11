@@ -4,113 +4,6 @@
 
 import argparse, glob, multiprocessing, os, re, shutil, stat, sys, subprocess
 
-def match(d0, d1):
-    x = [x for x in os.listdir(d0) if re.match(d1, x)]
-    return os.path.join(d0, x[0]) if x else None
-
-def search(d0, d1):
-    x = [x for x in os.listdir(d0) if re.search(d1, x)]
-    return os.path.join(d0, x[0]) if x else None
-
-def find_qtdir(rpi):
-    if rpi:
-        os.environ["QTDIR"] = rpi
-        path = os.path.join(rpi, "bin") + ':'
-        os.environ["PATH"] = path + os.environ["PATH"]
-        return rpi
-    elif sys.platform.startswith('win'):
-        qtdir = match(os.sep, r"Qt")
-        if qtdir:
-            qtdir = match(qtdir, r"\d\.\d(\.\d)?")
-            if qtdir:
-                qtdir = search(qtdir, r"mingw")
-                if qtdir:
-                    os.environ["QTDIR"] = qtdir
-                    path = ';' + os.path.join(qtdir, "bin")
-                    os.environ["PATH"] = os.environ["PATH"] + path
-                    return qtdir
-    elif sys.platform.startswith('darwin'):
-        qtdir = match(os.path.expanduser('~'), r"Qt")
-        if qtdir:
-            qtdir = match(qtdir, r"\d\.\d(\.\d)?")
-            if qtdir:
-                qtdir = search(qtdir, r"clang")
-                if qtdir:
-                    os.environ["QTDIR"] = qtdir
-                    path = ':' + os.path.join(qtdir, "bin")
-                    os.environ["PATH"] = os.environ["PATH"] + path
-                    return qtdir
-    elif sys.platform.startswith('linux'):
-        qtdir = match(os.path.expanduser('~'), r"Qt")
-        if qtdir:
-            qtdir = match(qtdir, r"\d\.\d(\.\d)?")
-            if qtdir:
-                qtdir = search(qtdir, r"gcc")
-                if qtdir:
-                    os.environ["QTDIR"] = qtdir
-                    path = ':' + os.path.join(qtdir, "bin")
-                    os.environ["PATH"] = os.environ["PATH"] + path
-                    return qtdir
-    return None
-
-def find_mingwdir():
-    if sys.platform.startswith('win'):
-        mingwdir = match(os.sep, r"Qt")
-        if mingwdir:
-            mingwdir = match(mingwdir, r"Tools")
-            if mingwdir:
-                mingwdir = search(mingwdir, r"mingw")
-                if mingwdir:
-                    os.environ["MINGWDIR"] = mingwdir
-                    path = ';' + os.path.join(mingwdir, "bin")
-                    os.environ["PATH"] = os.environ["PATH"] + path
-                    return mingwdir
-    return None
-
-def find_qtcdir():
-    if sys.platform.startswith('win'):
-        qtcdir = match(os.sep, r"Qt")
-        if qtcdir:
-            qtcdir = match(qtcdir, r"Tools")
-            if qtcdir:
-                qtcdir = match(qtcdir, r"QtCreator")
-                if qtcdir:
-                    os.environ["QTCDIR"] = qtcdir
-                    path = ';' + os.path.join(qtcdir, "bin")
-                    os.environ["PATH"] = os.environ["PATH"] + path
-                    return qtcdir
-    return None
-
-def find_ifdir():
-    if sys.platform.startswith('win'):
-        ifdir = match(os.sep, r"Qt")
-        if ifdir:
-            ifdir = search(ifdir, r"QtIFW")
-            if ifdir:
-                os.environ["IFDIR"] = ifdir
-                path = ';' + os.path.join(ifdir, "bin")
-                os.environ["PATH"] = os.environ["PATH"] + path
-                return ifdir
-    elif sys.platform.startswith('darwin'):
-        ifdir = match(os.path.expanduser('~'), r"Qt")
-        if ifdir:
-            ifdir = search(ifdir, r"QtIFW")
-            if ifdir:
-                os.environ["IFDIR"] = ifdir
-                path = ':' + os.path.join(ifdir, "bin")
-                os.environ["PATH"] = os.environ["PATH"] + path
-                return ifdir
-    elif sys.platform.startswith('linux'):
-        ifdir = match(os.path.expanduser('~'), r"Qt")
-        if ifdir:
-            ifdir = search(ifdir, r"QtIFW")
-            if ifdir:
-                os.environ["IFDIR"] = ifdir
-                path = ':' + os.path.join(ifdir, "bin")
-                os.environ["PATH"] = os.environ["PATH"] + path
-                return ifdir
-    return None
-
 def make():
 
     __folder__ = os.path.dirname(os.path.abspath(__file__))
@@ -132,14 +25,13 @@ def make():
     ###########################################################################
 
     cpus = multiprocessing.cpu_count()
-
-    qtdir = find_qtdir(args.rpi)
-    mingwdir = find_mingwdir()
-    qtcdir = find_qtcdir()
-    ifdir = find_ifdir()
-
     builddir = os.path.join(__folder__, "build")
     installdir = os.path.join(builddir, "install")
+    qtcdir = glob.glob(os.path.join(os.environ["IQTA_TOOLS"], "QtCreator"))[0]
+    os.environ["PATH"] += os.pathsep + os.path.join(qtcdir, "bin")
+    os.environ["PATH"] += os.pathsep + os.path.join(os.path.join(qtcdir, "bin"), "jom")
+    ifwdir = glob.glob(os.path.join(os.environ["IQTA_TOOLS"], "QtInstallerFramework", "*"))[0]
+    os.environ["PATH"] += os.pathsep + os.path.join(ifwdir, "bin")
 
     if not os.path.exists(builddir):
         os.mkdir(builddir)
@@ -226,14 +118,14 @@ def make():
         if os.system("cd " + builddir +
         " && qmake ../qt-creator/qtcreator.pro -r -spec win32-g++" +
         " && jom -j" + str(cpus) +
-        " && jom installer INSTALL_ROOT="+installdir + " IFW_PATH="+ifdir):
+        " && jom installer INSTALL_ROOT="+installdir + " IFW_PATH="+ifwdir):
             sys.exit("Make Failed...")
         installer = glob.glob(os.path.join(builddir, "openmv-ide-*.exe"))[0]
 
     elif sys.platform.startswith('darwin'):
         if os.system("cd " + builddir +
         " && qmake ../qt-creator/qtcreator.pro -r -spec macx-clang CONFIG+=x86_64" +
-        " && make -j" + str(cpus) +
+        " && make -s -j" + str(cpus) +
         " && make deployqt"):
             sys.exit("Make Failed...")
         os.system("cd " + builddir + " && make codesign SIGNING_IDENTITY=Application")
@@ -264,8 +156,8 @@ def make():
         # Build...
         if os.system("cd " + builddir +
         " && qmake ../qt-creator/qtcreator.pro -r -spec linux-g++" +
-        " && make -r -w -j" + str(cpus) +
-        " && make installer INSTALL_ROOT="+installdir + " IFW_PATH="+str(ifdir)):
+        " && make -r -s -w -j" + str(cpus) +
+        " && make installer INSTALL_ROOT="+installdir + " IFW_PATH="+str(ifwdir)):
             sys.exit("Make Failed...")
         installer = glob.glob(os.path.join(builddir, "openmv-ide-*.run"))[0]
 
